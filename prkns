@@ -3160,7 +3160,7 @@
                   ],
                   "queries": [
                     {
-                      "query": "sum:kubernetes_state.pod.status_phase{ AND $cluster AND $namespace AND $deployment AND AND AND AND AND $node AND AND (pod_phase:succeeded OR pod_phase:running)} by {pod_phase}.weighted()",
+                      "query": "sum:kubernetes_state.pod.status_phase{$cluster AND $namespace AND $deployment AND $node AND (pod_phase:succeeded OR pod_phase:running)} by {pod_phase}.weighted()",
                       "data_source": "metrics",
                       "name": "query1"
                     },
