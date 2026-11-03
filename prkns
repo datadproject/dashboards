@@ -1,0 +1,1428 @@
+{
+  "title": "Perkins | EKS Clusters & ULP Services",
+  "description": "Cluster health, workloads, container resources, ULP Celery workers (APM), Postgres/Redis, Python runtime, releases and logs for the Perkins dev and prod EKS clusters.",
+  "layout_type": "ordered",
+  "reflow_type": "fixed",
+  "notify_list": [],
+  "template_variables": [
+    { "name": "cluster", "prefix": "kube_cluster_name", "available_values": ["perkins-gcralsp-development-primary-ekscluster", "perkins-gcralsp-production-primary-ekscluster"], "defaults": ["perkins-gcralsp-development-primary-ekscluster"] },
+    { "name": "namespace", "prefix": "kube_namespace", "available_values": [], "defaults": ["*"] },
+    { "name": "env", "prefix": "env", "available_values": [], "defaults": ["development"] },
+    { "name": "service", "prefix": "service", "available_values": [], "defaults": ["ulp*"] }
+  ],
+  "widgets": [
+    {
+      "definition": {
+        "type": "note",
+        "content": "**Perkins EKS clusters** · switch dev/prod with the `cluster` filter · narrow pods and containers with `namespace`.\n\nThe APM sections (Celery, Django web, Postgres/Redis, Python runtime, releases) use `env` and `service`; dev traces use `env:development`. **Prod currently sends no traces**, so those sections stay empty on prod until tracing is turned on. Sections marked *blank unless...* fill in once that Datadog integration is enabled; delete any you don't need. Color thresholds are starting points.",
+        "background_color": "yellow",
+        "font_size": "14",
+        "text_align": "left",
+        "vertical_align": "top",
+        "show_tick": false,
+        "tick_pos": "50%",
+        "tick_edge": "left",
+        "has_padding": true
+      },
+      "layout": { "x": 0, "y": 0, "width": 12, "height": 2 }
+    },
+    {
+      "definition": {
+        "title": "Cluster health",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "vivid_blue",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "title": "Nodes ready",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes_state.node.by_condition{$cluster,condition:ready,status:true}", "aggregator": "last" } ],
+                "formulas": [ { "formula": "q" } ] } ],
+              "autoscale": true, "precision": 0
+            },
+            "layout": { "x": 0, "y": 0, "width": 2, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "Nodes not ready",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes_state.node.by_condition{$cluster,condition:ready,!status:true}", "aggregator": "last" } ],
+                "formulas": [ { "formula": "q" } ],
+                "conditional_formats": [
+                  { "comparator": ">", "value": 0, "palette": "white_on_red" },
+                  { "comparator": "<=", "value": 0, "palette": "white_on_green" } ] } ],
+              "autoscale": true, "precision": 0
+            },
+            "layout": { "x": 2, "y": 0, "width": 2, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "Pods running",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes_state.pod.status_phase{$cluster,$namespace,pod_phase:running}", "aggregator": "last" } ],
+                "formulas": [ { "formula": "q" } ] } ],
+              "autoscale": true, "precision": 0
+            },
+            "layout": { "x": 4, "y": 0, "width": 2, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "Pods pending",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes_state.pod.status_phase{$cluster,$namespace,pod_phase:pending}", "aggregator": "last" } ],
+                "formulas": [ { "formula": "q" } ],
+                "conditional_formats": [
+                  { "comparator": ">", "value": 0, "palette": "white_on_yellow" },
+                  { "comparator": "<=", "value": 0, "palette": "white_on_green" } ] } ],
+              "autoscale": true, "precision": 0
+            },
+            "layout": { "x": 6, "y": 0, "width": 2, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "Pods failed",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes_state.pod.status_phase{$cluster,$namespace,pod_phase:failed}", "aggregator": "last" } ],
+                "formulas": [ { "formula": "q" } ],
+                "conditional_formats": [
+                  { "comparator": ">", "value": 0, "palette": "white_on_red" },
+                  { "comparator": "<=", "value": 0, "palette": "white_on_green" } ] } ],
+              "autoscale": true, "precision": 0
+            },
+            "layout": { "x": 8, "y": 0, "width": 2, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "CrashLoopBackOff (blank = none)",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes_state.container.status_report.count.waiting{$cluster,$namespace,reason:crashloopbackoff}", "aggregator": "last" } ],
+                "formulas": [ { "formula": "q" } ],
+                "conditional_formats": [
+                  { "comparator": ">", "value": 0, "palette": "white_on_red" },
+                  { "comparator": "<=", "value": 0, "palette": "white_on_green" } ] } ],
+              "autoscale": true, "precision": 0
+            },
+            "layout": { "x": 10, "y": 0, "width": 2, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "Node CPU used %",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "avg:system.cpu.idle{$cluster} by {host}" } ],
+                "formulas": [ { "formula": "100 - q", "number_format": { "unit": { "type": "custom_unit_label", "label": "%" } } } ],
+                "display_type": "line" } ],
+              "markers": [ { "value": "y = 80", "display_type": "warning dashed", "label": "80%" } ]
+            },
+            "layout": { "x": 0, "y": 2, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Node memory used %",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "avg:system.mem.pct_usable{$cluster} by {host}" } ],
+                "formulas": [ { "formula": "100 * (1 - q)", "number_format": { "unit": { "type": "custom_unit_label", "label": "%" } } } ],
+                "display_type": "line" } ],
+              "markers": [ { "value": "y = 85", "display_type": "warning dashed", "label": "85%" } ]
+            },
+            "layout": { "x": 6, "y": 2, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "CPU requested (% of allocatable)",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [
+                  { "data_source": "metrics", "name": "r", "query": "sum:kubernetes_state.container.cpu_requested{$cluster}", "aggregator": "last" },
+                  { "data_source": "metrics", "name": "a", "query": "sum:kubernetes_state.node.cpu_allocatable{$cluster}", "aggregator": "last" } ],
+                "formulas": [ { "formula": "100 * r / a" } ],
+                "conditional_formats": [
+                  { "comparator": ">", "value": 90, "palette": "white_on_red" },
+                  { "comparator": ">", "value": 75, "palette": "white_on_yellow" },
+                  { "comparator": "<=", "value": 75, "palette": "white_on_green" } ] } ],
+              "autoscale": true, "custom_unit": "%", "precision": 0
+            },
+            "layout": { "x": 0, "y": 5, "width": 3, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "Memory requested (% of allocatable)",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [
+                  { "data_source": "metrics", "name": "r", "query": "sum:kubernetes_state.container.memory_requested{$cluster}", "aggregator": "last" },
+                  { "data_source": "metrics", "name": "a", "query": "sum:kubernetes_state.node.memory_allocatable{$cluster}", "aggregator": "last" } ],
+                "formulas": [ { "formula": "100 * r / a" } ],
+                "conditional_formats": [
+                  { "comparator": ">", "value": 90, "palette": "white_on_red" },
+                  { "comparator": ">", "value": 75, "palette": "white_on_yellow" },
+                  { "comparator": "<=", "value": 75, "palette": "white_on_green" } ] } ],
+              "autoscale": true, "custom_unit": "%", "precision": 0
+            },
+            "layout": { "x": 3, "y": 5, "width": 3, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "CPU limits (% of allocatable)",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [
+                  { "data_source": "metrics", "name": "l", "query": "sum:kubernetes_state.container.cpu_limit{$cluster}", "aggregator": "last" },
+                  { "data_source": "metrics", "name": "a", "query": "sum:kubernetes_state.node.cpu_allocatable{$cluster}", "aggregator": "last" } ],
+                "formulas": [ { "formula": "100 * l / a" } ],
+                "conditional_formats": [
+                  { "comparator": ">", "value": 100, "palette": "white_on_yellow" },
+                  { "comparator": "<=", "value": 100, "palette": "white_on_green" } ] } ],
+              "autoscale": true, "custom_unit": "%", "precision": 0
+            },
+            "layout": { "x": 6, "y": 5, "width": 3, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "Memory limits (% of allocatable)",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [
+                  { "data_source": "metrics", "name": "l", "query": "sum:kubernetes_state.container.memory_limit{$cluster}", "aggregator": "last" },
+                  { "data_source": "metrics", "name": "a", "query": "sum:kubernetes_state.node.memory_allocatable{$cluster}", "aggregator": "last" } ],
+                "formulas": [ { "formula": "100 * l / a" } ],
+                "conditional_formats": [
+                  { "comparator": ">", "value": 100, "palette": "white_on_yellow" },
+                  { "comparator": "<=", "value": 100, "palette": "white_on_green" } ] } ],
+              "autoscale": true, "custom_unit": "%", "precision": 0
+            },
+            "layout": { "x": 9, "y": 5, "width": 3, "height": 2 }
+          }
+        ]
+      },
+      "layout": { "x": 0, "y": 2, "width": 12, "height": 8 }
+    },
+    {
+      "definition": {
+        "title": "Capacity, nodes, network and disk",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "blue",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "title": "CPU: capacity, allocatable, requested and used (cores)",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [
+                  { "data_source": "metrics", "name": "cap", "query": "sum:kubernetes_state.node.cpu_capacity{$cluster}" },
+                  { "data_source": "metrics", "name": "alloc", "query": "sum:kubernetes_state.node.cpu_allocatable{$cluster}" },
+                  { "data_source": "metrics", "name": "req", "query": "sum:kubernetes_state.container.cpu_requested{$cluster}" },
+                  { "data_source": "metrics", "name": "used", "query": "sum:kubernetes.cpu.usage.total{$cluster}" } ],
+                "formulas": [
+                  { "formula": "cap", "alias": "capacity", "number_format": { "unit": { "type": "custom_unit_label", "label": "cores" } } },
+                  { "formula": "alloc", "alias": "allocatable", "number_format": { "unit": { "type": "custom_unit_label", "label": "cores" } } },
+                  { "formula": "req", "alias": "requested", "number_format": { "unit": { "type": "custom_unit_label", "label": "cores" } } },
+                  { "formula": "used / 1000000000", "alias": "used", "number_format": { "unit": { "type": "custom_unit_label", "label": "cores" } } } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 0, "y": 0, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Memory: capacity, allocatable, requested and used",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [
+                  { "data_source": "metrics", "name": "cap", "query": "sum:kubernetes_state.node.memory_capacity{$cluster}" },
+                  { "data_source": "metrics", "name": "alloc", "query": "sum:kubernetes_state.node.memory_allocatable{$cluster}" },
+                  { "data_source": "metrics", "name": "req", "query": "sum:kubernetes_state.container.memory_requested{$cluster}" },
+                  { "data_source": "metrics", "name": "used", "query": "sum:kubernetes.memory.usage{$cluster}" } ],
+                "formulas": [
+                  { "formula": "cap", "alias": "capacity", "number_format": { "unit": { "type": "canonical_unit", "unit_name": "byte" } } },
+                  { "formula": "alloc", "alias": "allocatable", "number_format": { "unit": { "type": "canonical_unit", "unit_name": "byte" } } },
+                  { "formula": "req", "alias": "requested", "number_format": { "unit": { "type": "canonical_unit", "unit_name": "byte" } } },
+                  { "formula": "used", "alias": "used", "number_format": { "unit": { "type": "canonical_unit", "unit_name": "byte" } } } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 6, "y": 0, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Pods: capacity, allocatable and running",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [
+                  { "data_source": "metrics", "name": "cap", "query": "sum:kubernetes_state.node.pods_capacity{$cluster}" },
+                  { "data_source": "metrics", "name": "alloc", "query": "sum:kubernetes_state.node.pods_allocatable{$cluster}" },
+                  { "data_source": "metrics", "name": "run", "query": "sum:kubernetes_state.pod.status_phase{$cluster,pod_phase:running}" } ],
+                "formulas": [
+                  { "formula": "cap", "alias": "capacity" },
+                  { "formula": "alloc", "alias": "allocatable" },
+                  { "formula": "run", "alias": "running" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 0, "y": 3, "width": 4, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Ready pods",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [
+                  { "data_source": "metrics", "name": "ready", "query": "sum:kubernetes_state.pod.ready{$cluster,$namespace,condition:true}", "aggregator": "last" },
+                  { "data_source": "metrics", "name": "run", "query": "sum:kubernetes_state.pod.status_phase{$cluster,$namespace,pod_phase:running}", "aggregator": "last" } ],
+                "formulas": [ { "formula": "100 * ready / run" } ],
+                "conditional_formats": [
+                  { "comparator": "<", "value": 90, "palette": "white_on_red" },
+                  { "comparator": "<", "value": 98, "palette": "white_on_yellow" },
+                  { "comparator": ">=", "value": 98, "palette": "white_on_green" } ] } ],
+              "autoscale": true, "custom_unit": "%", "precision": 0
+            },
+            "layout": { "x": 4, "y": 3, "width": 2, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Kubelets up",
+              "type": "check_status",
+              "check": "kubernetes.kubelet.check",
+              "grouping": "cluster",
+              "group_by": [],
+              "tags": ["$cluster"]
+            },
+            "layout": { "x": 6, "y": 3, "width": 2, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Nodes under pressure (blank = none)",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes_state.node.by_condition{$cluster,!condition:ready,status:true} by {condition}" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "bars" } ]
+            },
+            "layout": { "x": 8, "y": 3, "width": 4, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Network rate (cluster total)",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [
+                  { "data_source": "metrics", "name": "rx", "query": "sum:kubernetes.network.rx_bytes{$cluster}" },
+                  { "data_source": "metrics", "name": "tx", "query": "sum:kubernetes.network.tx_bytes{$cluster}" } ],
+                "formulas": [
+                  { "formula": "rx", "alias": "received", "number_format": { "unit": { "type": "canonical_unit", "unit_name": "byte", "per_unit_name": "second" } } },
+                  { "formula": "tx", "alias": "sent", "number_format": { "unit": { "type": "canonical_unit", "unit_name": "byte", "per_unit_name": "second" } } } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 0, "y": 6, "width": 4, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Network errors and dropped packets",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [
+                  { "data_source": "metrics", "name": "rxe", "query": "sum:kubernetes.network.rx_errors{$cluster}" },
+                  { "data_source": "metrics", "name": "txe", "query": "sum:kubernetes.network.tx_errors{$cluster}" },
+                  { "data_source": "metrics", "name": "rxd", "query": "sum:kubernetes.network.rx_dropped{$cluster}" },
+                  { "data_source": "metrics", "name": "txd", "query": "sum:kubernetes.network.tx_dropped{$cluster}" } ],
+                "formulas": [
+                  { "formula": "rxe", "alias": "receive errors" },
+                  { "formula": "txe", "alias": "send errors" },
+                  { "formula": "rxd", "alias": "received dropped" },
+                  { "formula": "txd", "alias": "sent dropped" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 4, "y": 6, "width": 4, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Disk I/O (cluster total)",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [
+                  { "data_source": "metrics", "name": "rd", "query": "sum:kubernetes.io.read_bytes{$cluster}" },
+                  { "data_source": "metrics", "name": "wr", "query": "sum:kubernetes.io.write_bytes{$cluster}" } ],
+                "formulas": [
+                  { "formula": "rd", "alias": "read", "number_format": { "unit": { "type": "canonical_unit", "unit_name": "byte", "per_unit_name": "second" } } },
+                  { "formula": "wr", "alias": "write", "number_format": { "unit": { "type": "canonical_unit", "unit_name": "byte", "per_unit_name": "second" } } } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 8, "y": 6, "width": 4, "height": 3 }
+          }
+        ]
+      },
+      "layout": { "x": 0, "y": 10, "width": 12, "height": 10 }
+    },
+    {
+      "definition": {
+        "title": "Workloads",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "vivid_purple",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "title": "Pods by phase",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes_state.pod.status_phase{$cluster,$namespace} by {pod_phase}" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "bars" } ]
+            },
+            "layout": { "x": 0, "y": 0, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Container restarts by deployment",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes_state.container.restarts{$cluster,$namespace} by {kube_deployment}" } ],
+                "formulas": [ { "formula": "monotonic_diff(q)" } ],
+                "display_type": "bars" } ]
+            },
+            "layout": { "x": 6, "y": 0, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Waiting containers by reason (CrashLoopBackOff, ImagePullBackOff...)",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes_state.container.status_report.count.waiting{$cluster,$namespace} by {reason}" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "bars" } ]
+            },
+            "layout": { "x": 0, "y": 3, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Terminated containers by reason (OOMKilled, Error...)",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes_state.container.status_report.count.terminated{$cluster,$namespace} by {reason}" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "bars" } ]
+            },
+            "layout": { "x": 6, "y": 3, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Deployments missing replicas (desired - available)",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [
+                  { "data_source": "metrics", "name": "d", "query": "sum:kubernetes_state.deployment.replicas_desired{$cluster,$namespace} by {kube_deployment}", "aggregator": "last" },
+                  { "data_source": "metrics", "name": "a", "query": "sum:kubernetes_state.deployment.replicas_available{$cluster,$namespace} by {kube_deployment}", "aggregator": "last" } ],
+                "formulas": [ { "formula": "d - a", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 0, "y": 6, "width": 6, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "Autoscalers: % of max replicas in use",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [
+                  { "data_source": "metrics", "name": "cur", "query": "sum:kubernetes_state.hpa.current_replicas{$cluster,$namespace} by {horizontalpodautoscaler}" },
+                  { "data_source": "metrics", "name": "mx", "query": "sum:kubernetes_state.hpa.max_replicas{$cluster,$namespace} by {horizontalpodautoscaler}" } ],
+                "formulas": [ { "formula": "100 * cur / mx", "number_format": { "unit": { "type": "custom_unit_label", "label": "%" } } } ],
+                "display_type": "line" } ],
+              "markers": [ { "value": "y = 100", "display_type": "error dashed", "label": "at max" } ]
+            },
+            "layout": { "x": 6, "y": 6, "width": 6, "height": 4 }
+          }
+        ]
+      },
+      "layout": { "x": 0, "y": 20, "width": 12, "height": 11 }
+    },
+    {
+      "definition": {
+        "title": "DaemonSets, StatefulSets, Jobs and CronJobs",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "pink",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "title": "DaemonSets missing pods (desired - ready)",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [
+                  { "data_source": "metrics", "name": "d", "query": "sum:kubernetes_state.daemonset.desired{$cluster,$namespace} by {kube_daemon_set}", "aggregator": "last" },
+                  { "data_source": "metrics", "name": "r", "query": "sum:kubernetes_state.daemonset.ready{$cluster,$namespace} by {kube_daemon_set}", "aggregator": "last" } ],
+                "formulas": [ { "formula": "d - r", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 0, "y": 0, "width": 4, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "StatefulSets missing replicas (blank = no StatefulSets)",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [
+                  { "data_source": "metrics", "name": "d", "query": "sum:kubernetes_state.statefulset.replicas_desired{$cluster,$namespace} by {kube_stateful_set}", "aggregator": "last" },
+                  { "data_source": "metrics", "name": "r", "query": "sum:kubernetes_state.statefulset.replicas_ready{$cluster,$namespace} by {kube_stateful_set}", "aggregator": "last" } ],
+                "formulas": [ { "formula": "d - r", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 4, "y": 0, "width": 4, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "CronJobs with failed runs",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes_state.job.failed{$cluster,$namespace} by {kube_cronjob}", "aggregator": "last" } ],
+                "formulas": [ { "formula": "q", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 8, "y": 0, "width": 4, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "Job pods: succeeded vs failed",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [
+                  { "data_source": "metrics", "name": "ok", "query": "sum:kubernetes_state.job.succeeded{$cluster,$namespace}" },
+                  { "data_source": "metrics", "name": "bad", "query": "sum:kubernetes_state.job.failed{$cluster,$namespace}" } ],
+                "formulas": [
+                  { "formula": "ok", "alias": "succeeded" },
+                  { "formula": "bad", "alias": "failed" } ],
+                "display_type": "bars" } ]
+            },
+            "layout": { "x": 0, "y": 4, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Running containers by image (top 10)",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes_state.container.running{$cluster,$namespace} by {short_image}", "aggregator": "last" } ],
+                "formulas": [ { "formula": "q", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 6, "y": 4, "width": 6, "height": 3 }
+          }
+        ]
+      },
+      "layout": { "x": 0, "y": 31, "width": 12, "height": 8 }
+    },
+    {
+      "definition": {
+        "title": "Container resources (by deployment)",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "vivid_pink",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "title": "CPU used by deployment",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes.cpu.usage.total{$cluster,$namespace} by {kube_deployment}" } ],
+                "formulas": [ { "formula": "q", "number_format": { "unit": { "type": "canonical_unit", "unit_name": "nanocore" } } } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 0, "y": 0, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Memory used (working set) by deployment",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes.memory.working_set{$cluster,$namespace} by {kube_deployment}" } ],
+                "formulas": [ { "formula": "q", "number_format": { "unit": { "type": "canonical_unit", "unit_name": "byte" } } } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 6, "y": 0, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "CPU used as % of requested",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [
+                  { "data_source": "metrics", "name": "u", "query": "sum:kubernetes.cpu.usage.total{$cluster,$namespace} by {kube_deployment}", "aggregator": "avg" },
+                  { "data_source": "metrics", "name": "r", "query": "sum:kubernetes.cpu.requests{$cluster,$namespace} by {kube_deployment}", "aggregator": "avg" } ],
+                "formulas": [ { "formula": "100 * u / (r * 1000000000)", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 0, "y": 3, "width": 4, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "Memory used as % of limit (OOM risk)",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [
+                  { "data_source": "metrics", "name": "m", "query": "sum:kubernetes.memory.working_set{$cluster,$namespace} by {kube_deployment}", "aggregator": "avg" },
+                  { "data_source": "metrics", "name": "l", "query": "sum:kubernetes.memory.limits{$cluster,$namespace} by {kube_deployment}", "aggregator": "avg" } ],
+                "formulas": [ { "formula": "100 * m / l", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 4, "y": 3, "width": 4, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "CPU throttling % (CPU limit too low)",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [
+                  { "data_source": "metrics", "name": "t", "query": "sum:kubernetes.cpu.cfs.throttled.periods{$cluster,$namespace} by {kube_deployment}", "aggregator": "sum" },
+                  { "data_source": "metrics", "name": "p", "query": "sum:kubernetes.cpu.cfs.periods{$cluster,$namespace} by {kube_deployment}", "aggregator": "sum" } ],
+                "formulas": [ { "formula": "100 * t / p", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 8, "y": 3, "width": 4, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "Network received by deployment",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes.network.rx_bytes{$cluster,$namespace} by {kube_deployment}" } ],
+                "formulas": [ { "formula": "q", "number_format": { "unit": { "type": "canonical_unit", "unit_name": "byte", "per_unit_name": "second" } } } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 0, "y": 7, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Network sent by deployment",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:kubernetes.network.tx_bytes{$cluster,$namespace} by {kube_deployment}" } ],
+                "formulas": [ { "formula": "q", "number_format": { "unit": { "type": "canonical_unit", "unit_name": "byte", "per_unit_name": "second" } } } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 6, "y": 7, "width": 6, "height": 3 }
+          }
+        ]
+      },
+      "layout": { "x": 0, "y": 39, "width": 12, "height": 11 }
+    },
+    {
+      "definition": {
+        "title": "Kubernetes events",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "gray",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "title": "Kubernetes events by status (open Events Explorer with source:kubernetes for the full list)",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ {
+                  "data_source": "events", "name": "q",
+                  "search": { "query": "source:kubernetes $cluster" },
+                  "indexes": ["*"],
+                  "compute": { "aggregation": "count" },
+                  "group_by": [ { "facet": "status", "limit": 5, "sort": { "aggregation": "count", "order": "desc" } } ] } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "bars" } ]
+            },
+            "layout": { "x": 0, "y": 0, "width": 8, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Datadog Agents reporting vs nodes (gap = unmonitored nodes)",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [
+                  { "data_source": "metrics", "name": "agents", "query": "sum:datadog.agent.running{$cluster}" },
+                  { "data_source": "metrics", "name": "nodes", "query": "sum:kubernetes_state.node.count{$cluster}" } ],
+                "formulas": [
+                  { "formula": "nodes", "alias": "nodes" },
+                  { "formula": "agents", "alias": "agents reporting" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 8, "y": 0, "width": 4, "height": 3 }
+          }
+        ]
+      },
+      "layout": { "x": 0, "y": 50, "width": 12, "height": 4 }
+    },
+    {
+      "definition": {
+        "title": "ULP Celery workers (APM)",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "vivid_green",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "title": "Tasks / sec",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "h", "query": "sum:trace.celery.run.hits{$env,$service}.as_rate()", "aggregator": "avg" } ],
+                "formulas": [ { "formula": "h" } ] } ],
+              "autoscale": true, "precision": 2,
+              "timeseries_background": { "type": "area", "yaxis": { "include_zero": true } }
+            },
+            "layout": { "x": 0, "y": 0, "width": 3, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "Task error rate",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [
+                  { "data_source": "metrics", "name": "e", "query": "sum:trace.celery.run.errors{$env,$service}.as_count()", "aggregator": "sum" },
+                  { "data_source": "metrics", "name": "h", "query": "sum:trace.celery.run.hits{$env,$service}.as_count()", "aggregator": "sum" } ],
+                "formulas": [ { "formula": "100 * default_zero(e) / h" } ],
+                "conditional_formats": [
+                  { "comparator": ">", "value": 5, "palette": "white_on_red" },
+                  { "comparator": ">", "value": 1, "palette": "white_on_yellow" },
+                  { "comparator": "<=", "value": 1, "palette": "white_on_green" } ] } ],
+              "autoscale": true, "custom_unit": "%", "precision": 2
+            },
+            "layout": { "x": 3, "y": 0, "width": 3, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "Task duration p95",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "p95:trace.celery.run{$env,$service}", "aggregator": "avg" } ],
+                "formulas": [ { "formula": "q" } ] } ],
+              "autoscale": true, "precision": 2,
+              "timeseries_background": { "type": "area", "yaxis": { "include_zero": true } }
+            },
+            "layout": { "x": 6, "y": 0, "width": 3, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "Task duration p99",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "p99:trace.celery.run{$env,$service}", "aggregator": "avg" } ],
+                "formulas": [ { "formula": "q" } ] } ],
+              "autoscale": true, "precision": 2,
+              "timeseries_background": { "type": "area", "yaxis": { "include_zero": true } }
+            },
+            "layout": { "x": 9, "y": 0, "width": 3, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "Worker services at a glance",
+              "type": "query_table",
+              "requests": [ { "response_format": "scalar",
+                "queries": [
+                  { "data_source": "metrics", "name": "h", "query": "sum:trace.celery.run.hits{$env,$service} by {service}.as_count()", "aggregator": "sum" },
+                  { "data_source": "metrics", "name": "e", "query": "sum:trace.celery.run.errors{$env,$service} by {service}.as_count()", "aggregator": "sum" },
+                  { "data_source": "metrics", "name": "p", "query": "p95:trace.celery.run{$env,$service} by {service}", "aggregator": "avg" } ],
+                "formulas": [
+                  { "formula": "h", "alias": "tasks", "limit": { "count": 25, "order": "desc" } },
+                  { "formula": "e", "alias": "errors" },
+                  { "formula": "100 * default_zero(e) / h", "alias": "error %" },
+                  { "formula": "p", "alias": "p95 duration" } ] } ]
+            },
+            "layout": { "x": 0, "y": 2, "width": 12, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "Tasks / sec by worker service",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:trace.celery.run.hits{$env,$service} by {service}.as_rate()" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 0, "y": 6, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Task duration p95 by worker service",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "p95:trace.celery.run{$env,$service} by {service}" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 6, "y": 6, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Task errors by worker service (blank = none)",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:trace.celery.run.errors{$env,$service} by {service}.as_count()" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "bars" } ]
+            },
+            "layout": { "x": 0, "y": 9, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Tasks / sec vs same time last week",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:trace.celery.run.hits{$env,$service}.as_rate()" } ],
+                "formulas": [
+                  { "formula": "q", "alias": "now" },
+                  { "formula": "week_before(q)", "alias": "same time last week" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 6, "y": 9, "width": 6, "height": 3 }
+          }
+        ]
+      },
+      "layout": { "x": 0, "y": 54, "width": 12, "height": 13 }
+    },
+    {
+      "definition": {
+        "title": "ULP Celery tasks (APM)",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "green",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "title": "Most frequent tasks",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:trace.celery.run.hits{$env,$service} by {resource_name}.as_count()", "aggregator": "sum" } ],
+                "formulas": [ { "formula": "q", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 0, "y": 0, "width": 4, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "Slowest tasks (p95)",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "p95:trace.celery.run{$env,$service} by {resource_name}", "aggregator": "avg" } ],
+                "formulas": [ { "formula": "q", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 4, "y": 0, "width": 4, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "Tasks with most errors (blank = none)",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:trace.celery.run.errors{$env,$service} by {resource_name}.as_count()", "aggregator": "sum" } ],
+                "formulas": [ { "formula": "q", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 8, "y": 0, "width": 4, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "Total worker time by task (count x duration)",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:trace.celery.run.duration{$env,$service} by {resource_name}", "aggregator": "sum" } ],
+                "formulas": [ { "formula": "q", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 0, "y": 4, "width": 6, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "Tasks sent to the queue / sec (blank if senders aren't traced)",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:trace.celery.apply.hits{$env,$service} by {resource_name}.as_rate()" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 6, "y": 4, "width": 6, "height": 4 }
+          }
+        ]
+      },
+      "layout": { "x": 0, "y": 67, "width": 12, "height": 9 }
+    },
+    {
+      "definition": {
+        "title": "ULP web requests: Django (blank if no Django service is traced)",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "vivid_yellow",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "title": "Requests / sec",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "h", "query": "sum:trace.django.request.hits{$env,$service}.as_rate()", "aggregator": "avg" } ],
+                "formulas": [ { "formula": "h" } ] } ],
+              "autoscale": true, "precision": 2,
+              "timeseries_background": { "type": "area", "yaxis": { "include_zero": true } }
+            },
+            "layout": { "x": 0, "y": 0, "width": 3, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "5xx error rate",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [
+                  { "data_source": "metrics", "name": "ok", "query": "sum:trace.django.request.hits.by_http_status{$env,$service,!http.status_class:5xx}.as_count()", "aggregator": "sum" },
+                  { "data_source": "metrics", "name": "h", "query": "sum:trace.django.request.hits{$env,$service}.as_count()", "aggregator": "sum" } ],
+                "formulas": [ { "formula": "100 * (h - default_zero(ok)) / h" } ],
+                "conditional_formats": [
+                  { "comparator": ">", "value": 5, "palette": "white_on_red" },
+                  { "comparator": ">", "value": 1, "palette": "white_on_yellow" },
+                  { "comparator": "<=", "value": 1, "palette": "white_on_green" } ] } ],
+              "autoscale": true, "custom_unit": "%", "precision": 2
+            },
+            "layout": { "x": 3, "y": 0, "width": 3, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "Latency p95",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "p95:trace.django.request{$env,$service}", "aggregator": "avg" } ],
+                "formulas": [ { "formula": "q" } ],
+                "conditional_formats": [
+                  { "comparator": ">", "value": 1, "palette": "white_on_red" },
+                  { "comparator": ">", "value": 0.5, "palette": "white_on_yellow" },
+                  { "comparator": "<=", "value": 0.5, "palette": "white_on_green" } ] } ],
+              "autoscale": true, "precision": 2,
+              "timeseries_background": { "type": "area", "yaxis": { "include_zero": true } }
+            },
+            "layout": { "x": 6, "y": 0, "width": 3, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "Latency p99",
+              "type": "query_value",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "p99:trace.django.request{$env,$service}", "aggregator": "avg" } ],
+                "formulas": [ { "formula": "q" } ] } ],
+              "autoscale": true, "precision": 2,
+              "timeseries_background": { "type": "area", "yaxis": { "include_zero": true } }
+            },
+            "layout": { "x": 9, "y": 0, "width": 3, "height": 2 }
+          },
+          {
+            "definition": {
+              "title": "Requests by status class",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:trace.django.request.hits.by_http_status{$env,$service} by {http.status_class}.as_count()" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "bars" } ]
+            },
+            "layout": { "x": 0, "y": 2, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Latency p50 / p95 / p99",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [
+                  { "data_source": "metrics", "name": "p50", "query": "p50:trace.django.request{$env,$service}" },
+                  { "data_source": "metrics", "name": "p95", "query": "p95:trace.django.request{$env,$service}" },
+                  { "data_source": "metrics", "name": "p99", "query": "p99:trace.django.request{$env,$service}" } ],
+                "formulas": [ { "formula": "p50", "alias": "p50" }, { "formula": "p95", "alias": "p95" }, { "formula": "p99", "alias": "p99" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 6, "y": 2, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Busiest endpoints",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:trace.django.request.hits{$env,$service} by {resource_name}.as_count()", "aggregator": "sum" } ],
+                "formulas": [ { "formula": "q", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 0, "y": 5, "width": 4, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "Slowest endpoints (p95)",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "p95:trace.django.request{$env,$service} by {resource_name}", "aggregator": "avg" } ],
+                "formulas": [ { "formula": "q", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 4, "y": 5, "width": 4, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "Endpoints with most 5xx errors",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [
+                  { "data_source": "metrics", "name": "h", "query": "sum:trace.django.request.hits{$env,$service} by {resource_name}.as_count()", "aggregator": "sum" },
+                  { "data_source": "metrics", "name": "ok", "query": "sum:trace.django.request.hits.by_http_status{$env,$service,!http.status_class:5xx} by {resource_name}.as_count()", "aggregator": "sum" } ],
+                "formulas": [ { "formula": "h - default_zero(ok)", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 8, "y": 5, "width": 4, "height": 4 }
+          }
+        ]
+      },
+      "layout": { "x": 0, "y": 76, "width": 12, "height": 10 }
+    },
+    {
+      "definition": {
+        "title": "Postgres (ulp) and Redis, as seen by the app",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "vivid_orange",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "title": "Postgres queries / sec by service",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:trace.postgres.query.hits{$env,$service} by {service}.as_rate()" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 0, "y": 0, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Postgres query latency p50 / p95",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [
+                  { "data_source": "metrics", "name": "p50", "query": "p50:trace.postgres.query{$env,$service}" },
+                  { "data_source": "metrics", "name": "p95", "query": "p95:trace.postgres.query{$env,$service}" } ],
+                "formulas": [ { "formula": "p50", "alias": "p50" }, { "formula": "p95", "alias": "p95" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 6, "y": 0, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Redis commands / sec by service",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:trace.redis.command.hits{$env,$service} by {service}.as_rate()" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 0, "y": 3, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Redis command latency p50 / p95",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [
+                  { "data_source": "metrics", "name": "p50", "query": "p50:trace.redis.command{$env,$service}" },
+                  { "data_source": "metrics", "name": "p95", "query": "p95:trace.redis.command{$env,$service}" } ],
+                "formulas": [ { "formula": "p50", "alias": "p50" }, { "formula": "p95", "alias": "p95" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 6, "y": 3, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Slowest SQL queries (p95)",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "p95:trace.postgres.query{$env,$service} by {resource_name}", "aggregator": "avg" } ],
+                "formulas": [ { "formula": "q", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 0, "y": 6, "width": 6, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "Slowest Redis commands (p95)",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "p95:trace.redis.command{$env,$service} by {resource_name}", "aggregator": "avg" } ],
+                "formulas": [ { "formula": "q", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 6, "y": 6, "width": 6, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "Share of task time: Python code vs Postgres vs Redis",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [
+                  { "data_source": "metrics", "name": "run", "query": "sum:trace.celery.run.duration{$env,$service}" },
+                  { "data_source": "metrics", "name": "pg", "query": "sum:trace.postgres.query.duration{$env,$service}" },
+                  { "data_source": "metrics", "name": "rd", "query": "sum:trace.redis.command.duration{$env,$service}" } ],
+                "formulas": [
+                  { "formula": "100 * (run - default_zero(pg) - default_zero(rd)) / run", "alias": "Python code %" },
+                  { "formula": "100 * default_zero(pg) / run", "alias": "Postgres %" },
+                  { "formula": "100 * default_zero(rd) / run", "alias": "Redis %" } ],
+                "display_type": "area" } ]
+            },
+            "layout": { "x": 0, "y": 10, "width": 12, "height": 3 }
+          }
+        ]
+      },
+      "layout": { "x": 0, "y": 86, "width": 12, "height": 14 }
+    },
+    {
+      "definition": {
+        "title": "PgBouncer connection pooling (blank unless Datadog's PgBouncer integration is enabled)",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "orange",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "title": "Client connections: active vs waiting (waiting = pool exhausted)",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [
+                  { "data_source": "metrics", "name": "act", "query": "sum:pgbouncer.pools.cl_active{$cluster}" },
+                  { "data_source": "metrics", "name": "wait", "query": "sum:pgbouncer.pools.cl_waiting{$cluster}" } ],
+                "formulas": [ { "formula": "act", "alias": "active" }, { "formula": "wait", "alias": "waiting" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 0, "y": 0, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Server connections to Postgres: active vs idle",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [
+                  { "data_source": "metrics", "name": "act", "query": "sum:pgbouncer.pools.sv_active{$cluster}" },
+                  { "data_source": "metrics", "name": "idle", "query": "sum:pgbouncer.pools.sv_idle{$cluster}" } ],
+                "formulas": [ { "formula": "act", "alias": "active" }, { "formula": "idle", "alias": "idle" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 6, "y": 0, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Longest time a client has waited for a connection",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "max:pgbouncer.pools.maxwait{$cluster} by {db}" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 0, "y": 3, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Average query time by database",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "avg:pgbouncer.stats.avg_query_time{$cluster} by {db}" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 6, "y": 3, "width": 6, "height": 3 }
+          }
+        ]
+      },
+      "layout": { "x": 0, "y": 100, "width": 12, "height": 7 }
+    },
+    {
+      "definition": {
+        "title": "Istio service mesh (blank unless Datadog's Istio integration is enabled)",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "vivid_purple",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "title": "Requests / sec by destination service",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:istio.mesh.request.count{$cluster,reporter:destination} by {destination_service_name}.as_rate()" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 0, "y": 0, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "5xx responses by destination service (blank = none)",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:istio.mesh.request.count{$cluster,reporter:destination,response_code:5*} by {destination_service_name}.as_count()" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "bars" } ]
+            },
+            "layout": { "x": 6, "y": 0, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Average request duration by destination service (ms)",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [
+                  { "data_source": "metrics", "name": "s", "query": "sum:istio.mesh.request.duration.milliseconds.sum{$cluster,reporter:destination} by {destination_service_name}" },
+                  { "data_source": "metrics", "name": "c", "query": "sum:istio.mesh.request.duration.milliseconds.count{$cluster,reporter:destination} by {destination_service_name}" } ],
+                "formulas": [ { "formula": "s / c" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 0, "y": 3, "width": 6, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Busiest service-to-service paths",
+              "type": "toplist",
+              "requests": [ { "response_format": "scalar",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:istio.mesh.request.count{$cluster,reporter:destination} by {source_workload,destination_workload}.as_count()", "aggregator": "sum" } ],
+                "formulas": [ { "formula": "q", "limit": { "count": 10, "order": "desc" } } ] } ]
+            },
+            "layout": { "x": 6, "y": 3, "width": 6, "height": 3 }
+          }
+        ]
+      },
+      "layout": { "x": 0, "y": 107, "width": 12, "height": 7 }
+    },
+    {
+      "definition": {
+        "title": "Python runtime (needs DD_RUNTIME_METRICS_ENABLED=true)",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "yellow",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "title": "Python CPU % by service",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "avg:runtime.python.cpu.percent{$env,$service} by {service}" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 0, "y": 0, "width": 4, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Python memory (RSS) by service",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "avg:runtime.python.mem.rss{$env,$service} by {service}" } ],
+                "formulas": [ { "formula": "q", "number_format": { "unit": { "type": "canonical_unit", "unit_name": "byte" } } } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 4, "y": 0, "width": 4, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Threads by service",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "avg:runtime.python.thread_count{$env,$service} by {service}" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 8, "y": 0, "width": 4, "height": 3 }
+          }
+        ]
+      },
+      "layout": { "x": 0, "y": 114, "width": 12, "height": 4 }
+    },
+    {
+      "definition": {
+        "title": "Releases (by version tag)",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "purple",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "title": "Tasks by version",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:trace.celery.run.hits{$env,$service} by {version}.as_count()" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "bars" } ]
+            },
+            "layout": { "x": 0, "y": 0, "width": 4, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Task duration p95 by version",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "p95:trace.celery.run{$env,$service} by {version}" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "line" } ]
+            },
+            "layout": { "x": 4, "y": 0, "width": 4, "height": 3 }
+          },
+          {
+            "definition": {
+              "title": "Task errors by version (blank = none)",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ { "data_source": "metrics", "name": "q", "query": "sum:trace.celery.run.errors{$env,$service} by {version}.as_count()" } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "bars" } ]
+            },
+            "layout": { "x": 8, "y": 0, "width": 4, "height": 3 }
+          }
+        ]
+      },
+      "layout": { "x": 0, "y": 118, "width": 12, "height": 4 }
+    },
+    {
+      "definition": {
+        "title": "Logs",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "gray",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "title": "Log volume by status",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ {
+                  "data_source": "logs", "name": "q",
+                  "search": { "query": "$cluster $namespace $service" },
+                  "indexes": ["*"],
+                  "compute": { "aggregation": "count" },
+                  "group_by": [ { "facet": "status", "limit": 10, "sort": { "aggregation": "count", "order": "desc" } } ] } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "bars" } ]
+            },
+            "layout": { "x": 0, "y": 0, "width": 6, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "Log volume by service",
+              "type": "timeseries",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "requests": [ { "response_format": "timeseries",
+                "queries": [ {
+                  "data_source": "logs", "name": "q",
+                  "search": { "query": "$cluster $namespace $service" },
+                  "indexes": ["*"],
+                  "compute": { "aggregation": "count" },
+                  "group_by": [ { "facet": "service", "limit": 10, "sort": { "aggregation": "count", "order": "desc" } } ] } ],
+                "formulas": [ { "formula": "q" } ],
+                "display_type": "bars" } ]
+            },
+            "layout": { "x": 6, "y": 0, "width": 6, "height": 4 }
+          },
+          {
+            "definition": {
+              "title": "Error logs",
+              "type": "log_stream",
+              "indexes": [],
+              "query": "$cluster $namespace $service status:error",
+              "sort": { "column": "time", "order": "desc" },
+              "columns": ["service", "host"],
+              "show_date_column": true,
+              "show_message_column": true,
+              "message_display": "expanded-md"
+            },
+            "layout": { "x": 0, "y": 4, "width": 12, "height": 5 }
+          }
+        ]
+      },
+      "layout": { "x": 0, "y": 122, "width": 12, "height": 10 }
+    }
+  ]
+}
